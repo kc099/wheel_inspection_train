@@ -1,0 +1,15 @@
+# UI
+PySide6>=6.6
+
+# Serial trigger + PLC measurement frame (optional at runtime; app still starts
+# without it — trigger detection just stays off)
+pyserial>=3.5
+
+# Inference — anomalib Patchcore checkpoints (models/*.pt) run in-process.
+# These are already present in the `dl` conda env; versions verified there:
+#   torch 2.12  |  anomalib 2.5.0  |  torchvision 0.27  |  numpy 2.2  |  pillow 12
+torch>=2.1
+torchvision>=0.16
+anomalib>=2.5
+numpy>=1.24
+pillow>=10.0

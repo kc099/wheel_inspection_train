@@ -1,0 +1,24 @@
+{
+  "modbus": {
+    "protocol": "Modbus RTU",
+    "ip_address": "127.0.0.1",
+    "address1": 1,
+    "address2": 2,
+    "address3": 3,
+    "delay_ms": 100,
+    "com_port": "COM8",
+    "baud_rate": 19200,
+    "slave_id": 1
+  },
+  "app": {
+    "min_training_images": 10,
+    "lru_cache_size": 100,
+    "recognition_min_confidence": 0.3,
+    "session_timeout_minutes": 5,
+    "max_profiles": 4
+  },
+  "http_streamer": {
+    "url": "http://192.168.100.50:8080/stream-hd",
+    "timeout": 5
+  }
+}

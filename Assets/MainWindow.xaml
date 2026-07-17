@@ -1,0 +1,299 @@
+﻿<Window x:Class="Wheel_inspection.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:Wheel_inspection"
+        mc:Ignorable="d"
+        Title="MainWindow" Height="700" Width="1200"
+        Background="{StaticResource WindowBackgroundBrush}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <!-- title -->
+            <RowDefinition Height ="*"/>
+            <!-- body -->
+            <RowDefinition Height="Auto"/>
+            <!-- status bar -->
+        </Grid.RowDefinitions>
+
+        <!-- =Title Bar=-->
+        <Border Grid.Row="0" Background="{StaticResource HeaderBrush}" Padding="10,8"
+                BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="0,0,0,1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Left: menu -->
+                <Menu Grid.Column="0" HorizontalAlignment="Left" VerticalAlignment="Center"
+                      Background="Transparent" Foreground="{StaticResource TextPrimaryBrush}">
+                    <MenuItem Header="☰  Options" FontSize="14" FontWeight="SemiBold"
+                              Foreground="{StaticResource TextPrimaryBrush}" Background="Transparent">
+                        <MenuItem Header="Model data" Foreground="#111827"
+                                  Click="ModelDataMenuItem_Click"/>
+                        <MenuItem Header="Model data view" Foreground="#111827"
+                                  Click="ModelDataViewMenuItem_Click"/>
+                        <MenuItem Header="Train new model" Foreground="#111827"
+                                  Click="TrainNewModelMenuItem_Click"/>
+                        <MenuItem Header="Batch test" Foreground="#111827"
+                                  Click="BatchTestMenuItem_Click"/>
+                        <MenuItem Header="Modbus settings" Foreground="#111827"
+                                  Click="ModbusSettingsMenuItem_Click"/>
+                    </MenuItem>
+                </Menu>
+
+                <!-- Center: title -->
+                <TextBlock Grid.Column="1" Text="WHEEL INSPECTION SYSTEM"
+                           FontSize="28" FontWeight="Bold"
+                           Foreground="{StaticResource TitleBrush}"
+                           VerticalAlignment="Center" HorizontalAlignment="Center"/>
+
+                <!-- Right: logo + date / time -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal"
+                            HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Image Source="assets/Taurus_logo.PNG" Height="45" Margin="0,0,10,0"
+                           VerticalAlignment="Center"/>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock x:Name="DateText" FontSize="12" FontWeight="Bold"
+                                   HorizontalAlignment="Right"
+                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                        <TextBlock x:Name="TimeText" FontSize="12" FontWeight="Bold"
+                                   HorizontalAlignment="Right"
+                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1" Margin="12">
+            <Grid.ColumnDefinitions>
+                <!-- Camera capture frame -->
+                <ColumnDefinition Width="*"/>
+                <!-- Resultant frame -->
+                <ColumnDefinition Width="*"/>
+                <!-- Camera controls -->
+                <ColumnDefinition Width="280"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- ===== Column 0: Camera capture frame ===== -->
+            <Border Grid.Column="0" Margin="0,0,6,0"
+                    Background="{StaticResource CardBrush}"
+                    BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1"
+                    CornerRadius="8" Padding="10" Effect="{StaticResource CardShadow}">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="4,2,4,8">
+                        <Border Width="4" Height="16" CornerRadius="2"
+                                Background="{StaticResource ButtonBackgroundBrush}" Margin="0,0,8,0"/>
+                        <TextBlock Text="Camera Capture" FontSize="16" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                    </StackPanel>
+                    <Border Background="{StaticResource ImageBackgroundBrush}" CornerRadius="6">
+                        <Grid>
+                            <!-- Live camera feed / uploaded image renders here -->
+                            <Image x:Name="CaptureImage" Stretch="Uniform"/>
+                            <TextBlock x:Name="CapturePlaceholder" Text="No image loaded"
+                                       Foreground="{StaticResource PlaceholderBrush}" FontSize="14"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
+                </DockPanel>
+            </Border>
+
+            <!-- ===== Column 1: Resultant frame ===== -->
+            <Border Grid.Column="1" Margin="6,0,6,0"
+                    Background="{StaticResource CardBrush}"
+                    BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1"
+                    CornerRadius="8" Padding="10" Effect="{StaticResource CardShadow}">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="4,2,4,8">
+                        <Border Width="4" Height="16" CornerRadius="2"
+                                Background="{StaticResource ButtonBackgroundBrush}" Margin="0,0,8,0"/>
+                        <TextBlock Text="Result" FontSize="16" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                    </StackPanel>
+
+                    <!-- Detection results -->
+                    <Border DockPanel.Dock="Bottom" Background="{StaticResource FrameBrush}"
+                            BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1"
+                            CornerRadius="6" Padding="12" Margin="0,10,0,0">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Predicted Model"
+                                       Foreground="{StaticResource TextOnLightBrush}" FontSize="12"/>
+                            <TextBlock x:Name="ResultModelText" Grid.Row="0" Grid.Column="1" Text="N/A"
+                                       Foreground="{StaticResource TextPrimaryBrush}" FontWeight="Bold" FontSize="13"/>
+
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Confidence"
+                                       Foreground="{StaticResource TextOnLightBrush}" FontSize="12" Margin="0,6,0,0"/>
+                            <TextBlock x:Name="ResultConfidenceText" Grid.Row="1" Grid.Column="1" Text="N/A"
+                                       Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" Margin="0,6,0,0"/>
+
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Accuracy"
+                                       Foreground="{StaticResource TextOnLightBrush}" FontSize="12" Margin="0,6,0,0"/>
+                            <TextBlock x:Name="ResultAccuracyText" Grid.Row="2" Grid.Column="1" Text="N/A"
+                                       Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" Margin="0,6,0,0"/>
+
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Diameter (mm)"
+                                       Foreground="{StaticResource TextOnLightBrush}" FontSize="12" Margin="0,6,0,0"/>
+                            <TextBlock x:Name="ResultDiameterText" Grid.Row="3" Grid.Column="1" Text="0.0"
+                                       Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" Margin="0,6,0,0"/>
+
+                            <TextBlock Grid.Row="4" Grid.Column="0" Text="Height (mm)"
+                                       Foreground="{StaticResource TextOnLightBrush}" FontSize="12" Margin="0,6,0,0"/>
+                            <TextBlock x:Name="ResultHeightText" Grid.Row="4" Grid.Column="1" Text="0.0"
+                                       Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" Margin="0,6,0,0"/>
+
+                            <TextBlock Grid.Row="5" Grid.Column="0" Text="Anomaly Score"
+                                       Foreground="{StaticResource TextOnLightBrush}" FontSize="12" Margin="0,6,0,0"/>
+                            <TextBlock x:Name="ResultScoreText" Grid.Row="5" Grid.Column="1" Text="N/A"
+                                       Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" Margin="0,6,0,0"/>
+
+                            <TextBlock Grid.Row="6" Grid.Column="0" Text="NG Threshold"
+                                       Foreground="{StaticResource TextOnLightBrush}" FontSize="12" Margin="0,6,0,0"/>
+                            <TextBlock x:Name="ResultThresholdText" Grid.Row="6" Grid.Column="1" Text="N/A"
+                                       Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" Margin="0,6,0,0"/>
+
+                            <TextBlock Grid.Row="7" Grid.Column="0" Text="Status"
+                                       Foreground="{StaticResource TextOnLightBrush}" FontSize="12" Margin="0,6,0,0"/>
+                            <TextBlock x:Name="ResultStatusText" Grid.Row="7" Grid.Column="1" Text="Waiting"
+                                       Foreground="{StaticResource TextMutedBrush}" FontWeight="Bold" FontSize="13"
+                                       Margin="0,6,0,0"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- All-models breakdown: every loaded model's own score/threshold/accuracy
+                         for this image, not just the recognized one. Recognized row is highlighted. -->
+                    <Border DockPanel.Dock="Bottom" Background="{StaticResource FrameBrush}"
+                            BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1"
+                            CornerRadius="6" Padding="6" Margin="0,8,0,0">
+                        <DataGrid x:Name="AllModelsGrid"
+                                  AutoGenerateColumns="False"
+                                  CanUserAddRows="False"
+                                  CanUserDeleteRows="False"
+                                  IsReadOnly="True"
+                                  HeadersVisibility="Column"
+                                  GridLinesVisibility="Horizontal"
+                                  Background="Transparent"
+                                  BorderThickness="0"
+                                  RowBackground="White"
+                                  AlternatingRowBackground="#FFF3F6EC"
+                                  Foreground="#FF1F2A12"
+                                  FontSize="11"
+                                  RowHeight="24"
+                                  MaxHeight="150"
+                                  VerticalScrollBarVisibility="Auto"
+                                  SelectionMode="Single">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Model" Width="*" Binding="{Binding Model}"/>
+                                <DataGridTextColumn Header="Score" Width="70" Binding="{Binding Score}"/>
+                                <DataGridTextColumn Header="Threshold" Width="80" Binding="{Binding Threshold}"/>
+                                <DataGridTextColumn Header="Match %" Width="80" Binding="{Binding Accuracy}"/>
+                            </DataGrid.Columns>
+                            <DataGrid.RowStyle>
+                                <Style TargetType="DataGridRow">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsRecognized}" Value="True">
+                                            <Setter Property="FontWeight" Value="Bold"/>
+                                            <Setter Property="Background" Value="#FFDFF0C7"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </DataGrid.RowStyle>
+                        </DataGrid>
+                    </Border>
+
+                    <Border Background="{StaticResource ImageBackgroundBrush}" CornerRadius="6">
+                        <Grid>
+                            <!-- Anomaly heatmap for the recognized model renders here -->
+                            <Image x:Name="ResultImage" Stretch="Uniform"/>
+                            <TextBlock x:Name="ResultPlaceholder" Text="No result"
+                                       Foreground="{StaticResource PlaceholderBrush}" FontSize="14"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
+                </DockPanel>
+            </Border>
+
+            <!-- ===== Column 2: Camera controls ===== -->
+            <Border Grid.Column="2" Margin="6,0,0,0"
+                    Background="{StaticResource CardBrush}"
+                    BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1"
+                    CornerRadius="8" Padding="14" Effect="{StaticResource CardShadow}">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,14">
+                        <Border Width="4" Height="16" CornerRadius="2"
+                                Background="{StaticResource ButtonBackgroundBrush}" Margin="0,0,8,0"/>
+                        <TextBlock Text="Camera Controls" FontSize="16" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}"/>
+                    </StackPanel>
+
+                    <StackPanel DockPanel.Dock="Top">
+                        <TextBlock Text="IMAGE SOURCE" Foreground="{StaticResource TextMutedBrush}"
+                                   FontSize="10" FontWeight="Bold" Margin="0,0,0,6"/>
+                        <Button x:Name="UploadImageButton" Content="Upload Image (single)"
+                                Height="36" Margin="0,0,0,8" Click="UploadImageButton_Click"/>
+                        <Button x:Name="BatchTestButton" Content="Upload Batch (100s of images)"
+                                Height="36" Margin="0,0,0,12" Click="BatchTestMenuItem_Click"/>
+
+                        <Separator Margin="0,0,0,12"/>
+
+                        <TextBlock Text="LIVE CAMERA (COMING SOON)" Foreground="{StaticResource TextMutedBrush}"
+                                   FontSize="10" FontWeight="Bold" Margin="0,0,0,6"/>
+                        <Button x:Name="StartLiveButton" Content="Start Live"
+                                Height="36" Margin="0,0,0,8" Click="StartLiveButton_Click"/>
+                        <Button x:Name="StopLiveButton" Content="Stop Live"
+                                Height="36" Margin="0,0,0,8" Click="StopLiveButton_Click"/>
+                        <Button x:Name="CaptureButton" Content="Capture"
+                                Height="36" Margin="0,0,0,12" Click="CaptureButton_Click"/>
+
+                        <Separator Margin="0,0,0,12"/>
+
+                        <TextBlock Text="INSPECTION" Foreground="{StaticResource TextMutedBrush}"
+                                   FontSize="10" FontWeight="Bold" Margin="0,0,0,6"/>
+                        <Button x:Name="InspectButton" Content="Run Inspection"
+                                Height="50" Style="{StaticResource DangerButtonStyle}"
+                                Click="InspectButton_Click"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0" HorizontalAlignment="Center">
+                            <Ellipse x:Name="ModelServerDot" Width="8" Height="8" Fill="{StaticResource StatusWarnBrush}"
+                                     Margin="0,0,6,0"/>
+                            <TextBlock x:Name="ModelServerText" Text="Loading models..."
+                                       Foreground="{StaticResource TextMutedBrush}" FontSize="11"/>
+                        </StackPanel>
+
+                        <Separator Margin="0,0,0,12"/>
+                        <Button x:Name="Training" Content="Train"
+                                 Height="50" Style="{StaticResource DangerButtonStyle1}"
+                                 Click="TrainButton_Click"/>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+        </Grid>
+
+        <!-- ===== Status bar ===== -->
+        <Border Grid.Row="2" Background="{StaticResource StatusBarBrush}" Padding="10,8">
+            <StackPanel Orientation="Horizontal">
+                <Ellipse x:Name="StatusDot" Width="9" Height="9" Fill="White" Margin="0,0,8,0"/>
+                <TextBlock x:Name="StatusText" Foreground="White" FontWeight="Bold"
+                           Text="Ready."/>
+            </StackPanel>
+        </Border>
+
+    </Grid>
+</Window>
