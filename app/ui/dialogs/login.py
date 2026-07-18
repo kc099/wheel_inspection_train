@@ -61,6 +61,12 @@ class LoginDialog(QDialog):
         for b in (cancel, ok):
             b.setMinimumHeight(34)
             b.setStyleSheet(theme.normal_button_qss())
+
+        ok.setAutoDefault(True)
+        ok.setDefault(True)
+        cancel.setAutoDefault(False)
+        cancel.setDefault(False)
+
         cancel.clicked.connect(self.reject)
         ok.clicked.connect(self._attempt)
         row.addWidget(cancel)
@@ -73,10 +79,18 @@ class LoginDialog(QDialog):
         user = auth.verify(name, self.password.text())
         if user is None:
             # Log the failed attempt (username + time only — never the password).
-            history.log_action(name, "login_failed", "wrong username or password")
+            try:
+                history.log_action(name, "login_failed", "wrong username or password")
+            except Exception:
+                # Don't let logging failures close the dialog — show the error.
+                pass
             self.error.setText("Wrong username or password.")
             self.password.clear()
             return
-        history.log_action(user.username, "login", f"role={user.role}")
+        try:
+            history.log_action(user.username, "login", f"role={user.role}")
+        except Exception:
+            # Login succeeded; don't fail the whole login flow on audit errors.
+            pass
         self.user = user
         self.accept()

@@ -642,11 +642,21 @@ class MainWindow(QWidget):
             self.result_image.set_image(self._current_image)   # plain captured frame
 
         # 4a. No-match: even the closest model finds it too anomalous.
-        if not result.matched:
+        if not result.matched or self._is_background_prediction(result.model):
             self._show_no_match()
             self._set_status("Does not belong to any available model.", Level.WARN)
             # Logged for the audit trail, but never counted as a model.
             self._record(result, None)
+            # Unknown part: send an explicit safe reply instead of leaving the
+            # PLC waiting for a model measurement. An empty name maps to model
+            # id 0; the zero dimensions and flags identify a rejected part.
+            self.signals.send_measurement(
+                model_name="",
+                diameter_mm=0.0,
+                height_mm=0.0,
+                is_pass=False,
+                detection_confirmed=False,
+            )
             self._finish_inspection()
             return
 
@@ -692,6 +702,11 @@ class MainWindow(QWidget):
             self.dashboard.refresh()
         except Exception as e:
             self._set_status(f"Could not save inspection history: {e}", Level.WARN)
+
+    @staticmethod
+    def _is_background_prediction(model_name: str | None) -> bool:
+        """Treat any prediction whose name mentions background as a background result."""
+        return bool(model_name and "background" in model_name.lower())
 
     def _show_no_match(self) -> None:
         """Fill the panel for the 'not a known model' outcome. Returns: None."""
