@@ -197,7 +197,11 @@ class TrainDialog(QDialog):
         self._set_busy(True)
         self.status.setText("Starting training…")
 
-        self._thread = TrainThread(self._image_dir, name)
+        self._thread = TrainThread(
+            self._image_dir, name,
+            self.state.app_settings.pixel_to_mm,
+            self.state.app_settings.mask_threshold,
+        )
         self._thread.progress.connect(self.status.setText)
         self._thread.done.connect(self._on_done)
         self._thread.failed.connect(self._on_failed)
@@ -208,7 +212,12 @@ class TrainDialog(QDialog):
         name = self.name_edit.text().strip()
         try:
             registry.add_model(
-                ModelData(name, self.diameter.value(), self.height.value()),
+                ModelData(
+                    name, self.diameter.value(), self.height.value(),
+                    # Measured on the uploads; 0.0 if measurement was unavailable
+                    # (no background yet), which just skips the diameter check.
+                    pixel_diameter=self._thread.pixel_diameter if self._thread else 0.0,
+                ),
                 checkpoint_path,
             )
         except Exception as e:

@@ -109,6 +109,14 @@ class AppState(QObject):
         """Fire models_changed after training/deleting adds/removes a model."""
         self.models_changed.emit()
 
+    def save(self) -> None:
+        """Persist the current settings objects as-is.
+
+        For in-place tweaks to app_settings (e.g. the mask threshold) that
+        don't need the settings_changed signal. Returns: None.
+        """
+        config.save_settings(self._settings, self._app_settings, self._camera_settings)
+
     def set_settings(self, settings: ModbusSettings) -> None:
         """Replace Modbus settings, persist, notify. Returns: None."""
         self._settings = settings

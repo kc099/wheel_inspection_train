@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 900" font-family="Segoe UI, Arial, sans-serif">
+  <defs>
+    <marker id="arw" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#5b6b7a"/>
+    </marker>
+    <style>
+      .proc { fill:#e8f3e8; stroke:#2e7d32; stroke-width:2; }
+      .cls  { fill:#e4eefb; stroke:#0d3b66; stroke-width:2; }
+      .term { fill:#dfe7ee; stroke:#5b6b7a; stroke-width:2; }
+      .warn { fill:#fff3d6; stroke:#e08a00; stroke-width:2; }
+      .t    { fill:#1b2430; font-size:15px; }
+      .tb   { fill:#1b2430; font-size:15px; font-weight:600; }
+      .f    { fill:#6b7280; font-size:12px; font-family:Consolas,monospace; }
+      .lane { fill:#0d3b66; font-size:18px; font-weight:700; }
+      .edge { stroke:#5b6b7a; stroke-width:2; fill:none; marker-end:url(#arw); }
+      .note { fill:#5b6b7a; font-size:12px; font-style:italic; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1000" height="900" fill="#ffffff"/>
+
+  <text x="250" y="34" text-anchor="middle" class="lane">INSPECTION  (runtime)</text>
+  <text x="770" y="34" text-anchor="middle" class="lane">TRAINING  (add a model)</text>
+  <line x1="510" y1="20" x2="510" y2="835" stroke="#d5dbe2" stroke-width="1.5" stroke-dasharray="4 4"/>
+
+  <!-- ===================== INSPECTION (center 250) ===================== -->
+
+  <rect class="term" x="110" y="60" width="280" height="52" rx="26"/>
+  <text x="250" y="84"  text-anchor="middle" class="tb">Camera streams live frames</text>
+  <text x="250" y="102" text-anchor="middle" class="f">camera.py — CameraStream</text>
+  <line class="edge" x1="250" y1="112" x2="250" y2="146"/>
+
+  <rect class="proc" x="110" y="146" width="280" height="52" rx="8"/>
+  <text x="250" y="170" text-anchor="middle" class="tb">PLC trigger  /  Run Inspection</text>
+  <text x="250" y="188" text-anchor="middle" class="f">signal_handler.py · main_window.py</text>
+  <line class="edge" x1="250" y1="198" x2="250" y2="232"/>
+
+  <rect class="proc" x="110" y="232" width="280" height="52" rx="8"/>
+  <text x="250" y="256" text-anchor="middle" class="tb">Grab &amp; save the live frame</text>
+  <text x="250" y="274" text-anchor="middle" class="f">main_window.py</text>
+  <line class="edge" x1="250" y1="284" x2="250" y2="318"/>
+
+  <rect class="cls" x="110" y="318" width="280" height="64" rx="8"/>
+  <text x="250" y="340" text-anchor="middle" class="tb">Recognise the model</text>
+  <text x="250" y="358" text-anchor="middle" class="t">PatchCore · ResNet-50 (256×256)</text>
+  <text x="250" y="375" text-anchor="middle" class="f">engine.py — classify()</text>
+  <line class="edge" x1="250" y1="382" x2="250" y2="414"/>
+
+  <polygon class="warn" points="250,414 362,464 250,514 138,464"/>
+  <text x="250" y="460" text-anchor="middle" class="tb">Recognised?</text>
+  <text x="250" y="478" text-anchor="middle" class="t">confidence ≥ 0.30</text>
+
+  <line class="edge" x1="362" y1="464" x2="418" y2="464"/>
+  <text x="390" y="456" text-anchor="middle" class="note">No</text>
+  <rect class="warn" x="418" y="438" width="150" height="52" rx="8"/>
+  <text x="493" y="461" text-anchor="middle" class="tb">Not a known model</text>
+  <text x="493" y="479" text-anchor="middle" class="f">→ zero frame to PLC</text>
+
+  <line class="edge" x1="250" y1="514" x2="250" y2="548"/>
+  <text x="266" y="536" class="note">Yes</text>
+
+  <rect class="proc" x="110" y="548" width="280" height="64" rx="8"/>
+  <text x="250" y="570" text-anchor="middle" class="tb">Measure diameter</text>
+  <text x="250" y="588" text-anchor="middle" class="t">background subtract → circle fit</text>
+  <text x="250" y="605" text-anchor="middle" class="f">measure.py   (if enabled in config)</text>
+  <line class="edge" x1="250" y1="612" x2="250" y2="646"/>
+
+  <rect class="proc" x="110" y="646" width="280" height="80" rx="8"/>
+  <text x="250" y="668" text-anchor="middle" class="tb">Break ties by size</text>
+  <text x="250" y="686" text-anchor="middle" class="t">only when 2+ models tie on looks —</text>
+  <text x="250" y="701" text-anchor="middle" class="t">pick the nearest stored diameter</text>
+  <text x="250" y="718" text-anchor="middle" class="f">verdict.py — pick_by_diameter()</text>
+  <line class="edge" x1="250" y1="726" x2="250" y2="760"/>
+
+  <rect class="term" x="110" y="760" width="280" height="66" rx="26"/>
+  <text x="250" y="783" text-anchor="middle" class="tb">Report to PLC</text>
+  <text x="250" y="801" text-anchor="middle" class="t">model id + entered height + diameter</text>
+  <text x="250" y="816" text-anchor="middle" class="f">signal_handler.py — send_measurement()</text>
+
+  <!-- ===================== TRAINING (center 770) ===================== -->
+
+  <rect class="term" x="630" y="60" width="280" height="52" rx="26"/>
+  <text x="770" y="84"  text-anchor="middle" class="tb">Upload 10–25 good images</text>
+  <text x="770" y="102" text-anchor="middle" class="f">train.py — TrainDialog</text>
+  <line class="edge" x1="770" y1="112" x2="770" y2="150"/>
+
+  <rect class="proc" x="630" y="150" width="280" height="62" rx="8"/>
+  <text x="770" y="172" text-anchor="middle" class="tb">Augment: add rotations</text>
+  <text x="770" y="190" text-anchor="middle" class="t">90° / 180° / 270°  → up to 60</text>
+  <text x="770" y="205" text-anchor="middle" class="f">trainer.py — build_training_set()</text>
+  <line class="edge" x1="770" y1="212" x2="770" y2="248"/>
+
+  <rect class="cls" x="630" y="248" width="280" height="78" rx="8"/>
+  <text x="770" y="270" text-anchor="middle" class="tb">Build the memory bank</text>
+  <text x="770" y="288" text-anchor="middle" class="t">PatchCore.fit · ResNet-50</text>
+  <text x="770" y="303" text-anchor="middle" class="t">layer2 + layer4 · coreset 0.1</text>
+  <text x="770" y="320" text-anchor="middle" class="f">trainer.py — Engine.fit()</text>
+  <line class="edge" x1="770" y1="326" x2="770" y2="360"/>
+
+  <rect class="proc" x="630" y="360" width="280" height="62" rx="8"/>
+  <text x="770" y="382" text-anchor="middle" class="tb">Measure the size baseline</text>
+  <text x="770" y="400" text-anchor="middle" class="t">median pixel diameter of uploads</text>
+  <text x="770" y="415" text-anchor="middle" class="f">measure.py — measure_folder()</text>
+  <line class="edge" x1="770" y1="422" x2="770" y2="458"/>
+
+  <rect class="term" x="630" y="458" width="280" height="66" rx="26"/>
+  <text x="770" y="481" text-anchor="middle" class="tb">Save the model</text>
+  <text x="770" y="499" text-anchor="middle" class="t">weights.pt + meta.json (dia, pixel_dia)</text>
+  <text x="770" y="514" text-anchor="middle" class="f">registry.py — add_model()</text>
+
+  <path class="edge" d="M630 491 L560 491 L560 350 L392 350" stroke-dasharray="5 4"/>
+  <text x="596" y="360" text-anchor="middle" class="note">trained</text>
+  <text x="596" y="374" text-anchor="middle" class="note">models</text>
+
+  <!-- ===================== LEGEND ===================== -->
+  <text x="630" y="600" class="lane" font-size="14">Legend</text>
+  <rect x="630" y="614" width="20" height="15" class="proc" rx="3"/>
+  <text x="658" y="626" class="t">process step</text>
+  <rect x="630" y="640" width="20" height="15" class="cls" rx="3"/>
+  <text x="658" y="652" class="t">PatchCore (vision model)</text>
+  <polygon points="640,666 651,674 640,682 629,674" class="warn"/>
+  <text x="658" y="678" class="t">decision</text>
+  <rect x="630" y="692" width="20" height="15" class="term" rx="7"/>
+  <text x="658" y="704" class="t">start / end</text>
+  <text x="630" y="730" class="f">grey text = the source file that runs the step</text>
+</svg>

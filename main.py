@@ -4,15 +4,11 @@ Run: python main.py
 """
 
 import sys
+from datetime import datetime
 
 
 class _NullStream:
-    """Minimal text stream for PyInstaller's --windowed executable.
-
-    In windowed mode Windows provides no console, so PyInstaller sets stdout
-    and stderr to None. Lightning writes status messages while fitting a model;
-    supplying this sink keeps training independent of a visible CMD window.
-    """
+    """Last-resort silent sink so print() can never crash the app."""
 
     encoding = "utf-8"
 
@@ -26,10 +22,36 @@ class _NullStream:
         return False
 
 
-if sys.stdout is None:
-    sys.stdout = _NullStream()
-if sys.stderr is None:
-    sys.stderr = _NullStream()
+def _init_logging() -> None:
+    """Keep the engineer log when there is no console.
+
+    The windowed (no-console) build sets sys.stdout/stderr to None, so every
+    print() — camera connects, PLC triggers, per-model scores, measurement
+    diagnostics — would be lost or crash. Redirect them to a bounded UTF-8
+    WheelInspection.log next to the app so the trail survives. When a console IS
+    present (dev run), leave on-screen printing untouched.
+    """
+    if sys.stdout is not None and sys.stderr is not None:
+        return
+    try:
+        from app.core.paths import ROOT
+        log_path = ROOT / "WheelInspection.log"
+        # Bound growth on the production machine: roll over past ~5 MB.
+        try:
+            if log_path.exists() and log_path.stat().st_size > 5_000_000:
+                log_path.replace(log_path.with_suffix(".log.old"))
+        except OSError:
+            pass
+        stream = open(log_path, "a", buffering=1, encoding="utf-8")
+        stream.write(f"\n===== started {datetime.now():%Y-%m-%d %H:%M:%S} =====\n")
+        sys.stdout = stream
+        sys.stderr = stream
+    except Exception:
+        sys.stdout = sys.stdout or _NullStream()
+        sys.stderr = sys.stderr or _NullStream()
+
+
+_init_logging()
 
 from PySide6.QtWidgets import QApplication
 

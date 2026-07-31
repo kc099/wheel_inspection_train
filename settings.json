@@ -15,7 +15,11 @@
     "lru_cache_size": 100,
     "recognition_min_confidence": 0.3,
     "session_timeout_minutes": 5,
-    "max_profiles": 4
+    "max_profiles": 4,
+    "measure_diameter": true,
+    "pixel_to_mm": 0.885,
+    "diameter_tolerance_pct": 3.0,
+    "mask_threshold": 75
   },
   "http_streamer": {
     "url": "http://192.168.100.50:8080/stream-hd",

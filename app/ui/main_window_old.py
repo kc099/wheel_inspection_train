@@ -15,16 +15,20 @@ import numpy as np
 from PySide6.QtCore import Qt, QTimer, QDateTime
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
+    QCheckBox,
     QDialog,
     QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
+    QCheckBox,
     QLabel,
     QMenu,
     QMessageBox,
     QPushButton,
     QSizePolicy,
+    QSlider,
+    QSpinBox,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -296,10 +300,61 @@ class MainWindow(QWidget):
         self.inspect_btn.clicked.connect(self._on_run_inspection)
         lay.addWidget(self.inspect_btn)
 
-        # NOTE: the measurement controls (Measure diameter / Show binary mask /
-        # Show heatmap overlay / threshold) are no longer UI widgets. They are
-        # read live from measure_config.json — see load_measure_config() and
-        # the _measure_diameter flow. Edit that file to change them.
+        # Off by default: the overlay is rendered in memory only when checked,
+        # so production runs write nothing to disk.
+        self.overlay_check = QCheckBox("Show heatmap overlay")
+        self.overlay_check.setStyleSheet(
+            f"color: {theme.TEXT_MUTED}; font-size: 11px;"
+        )
+        lay.addWidget(self.overlay_check)
+
+        # Master switch for the whole measurement stage. Unchecked = pure
+        # recognition: no background subtraction, no mask, no diameter, and the
+        # tie-break never runs. Persisted so production keeps its choice.
+        self.measure_check = QCheckBox("Measure diameter")
+        self.measure_check.setStyleSheet(f"color: {theme.TEXT_MUTED}; font-size: 11px;")
+        self.measure_check.setChecked(self.state.app_settings.measure_diameter)
+        self.measure_check.toggled.connect(self._on_measure_toggled)
+        lay.addWidget(self.measure_check)
+
+        # Diagnostic: pops the binary mask window after each inspection so the
+        # threshold can be tuned against what the measurement actually sees.
+        # Meaningless without measurement, so it follows the master switch.
+        self.mask_check = QCheckBox("Show binary mask")
+        self.mask_check.setStyleSheet(f"color: {theme.TEXT_MUTED}; font-size: 11px;")
+        self.mask_check.toggled.connect(self._on_mask_toggled)
+        lay.addWidget(self.mask_check)
+
+        # Mask threshold: 0 = Otsu picks it automatically. Slider and box are
+        # two views of one value, so either can drive it.
+        thr_row = QWidget()
+        trl = QHBoxLayout(thr_row)
+        trl.setContentsMargins(0, 0, 0, 0)
+        trl.setSpacing(6)
+        thr_label = QLabel("Mask threshold")
+        thr_label.setStyleSheet(f"color: {theme.TEXT_MUTED}; font-size: 11px;")
+        trl.addWidget(thr_label)
+        self.thr_slider = QSlider(Qt.Horizontal)
+        self.thr_slider.setRange(0, 255)
+        self.thr_slider.setValue(self.state.app_settings.mask_threshold)
+        trl.addWidget(self.thr_slider, 1)
+        self.thr_box = QSpinBox()
+        self.thr_box.setRange(0, 255)
+        self.thr_box.setValue(self.state.app_settings.mask_threshold)
+        self.thr_box.setStyleSheet("background: white;")
+        self.thr_box.setToolTip("0 = automatic (Otsu). 1–255 = fixed threshold.")
+        trl.addWidget(self.thr_box)
+        self.thr_slider.valueChanged.connect(self.thr_box.setValue)
+        self.thr_box.valueChanged.connect(self.thr_slider.setValue)
+        self.thr_box.valueChanged.connect(self._on_threshold_changed)
+        lay.addWidget(thr_row)
+
+        self.thr_hint = QLabel("0 = auto (Otsu)")
+        self.thr_hint.setStyleSheet(f"color: {theme.TEXT_MUTED}; font-size: 10px;")
+        lay.addWidget(self.thr_hint)
+
+        # Apply the persisted master-switch state to the dependent controls.
+        self._on_measure_toggled(self.measure_check.isChecked())
 
         server_row = QWidget()
         srl = QHBoxLayout(server_row)
@@ -444,6 +499,43 @@ class MainWindow(QWidget):
             self._background = measure.load_background(BACKGROUND_PATH)
             self._log(f"Background reference updated: {BACKGROUND_PATH}")
             self._set_status("Background reference saved.", Level.OK)
+
+    def _on_measure_toggled(self, checked: bool) -> None:
+        """Enable/disable the whole measurement stage. Returns: None."""
+        self.state.app_settings.measure_diameter = bool(checked)
+        self.state.save()
+        # The mask/threshold controls only mean something when measuring.
+        self.mask_check.setEnabled(checked)
+        self.thr_slider.setEnabled(checked)
+        self.thr_box.setEnabled(checked)
+        self.thr_hint.setEnabled(checked)
+        if not checked:
+            self.mask_check.setChecked(False)
+            self.result_values["Diameter"].setText("—")
+        self._log(f"Diameter measurement {'enabled' if checked else 'disabled'}")
+
+    def _on_mask_toggled(self, checked: bool) -> None:
+        """Arm/disarm the binary-mask window.
+
+        Ticking only ARMS it — the window appears at the END of the next
+        inspection, showing that inspection's mask, rather than popping up
+        empty. Returns: None.
+        """
+        if not checked and self._mask_window is not None:
+            self._mask_window.hide()
+
+    def _show_threshold_used(self, m) -> None:
+        """Echo the threshold actually applied next to the slider. Returns: None."""
+        if m is None:
+            return
+        mode = "auto" if m.auto_threshold else "fixed"
+        self.thr_hint.setText(f"0 = auto (Otsu) — applied: {m.threshold_used} ({mode})")
+
+    def _on_threshold_changed(self, value: int) -> None:
+        """Persist the mask threshold so it survives a restart. Returns: None."""
+        self.state.app_settings.mask_threshold = int(value)
+        self.thr_hint.setText("0 = auto (Otsu)" if value == 0 else f"fixed cut at {value}")
+        self.state.save()
 
     def _open_modbus_settings(self) -> None:
         if not self._require_login("change Modbus settings", developer_only=True):
@@ -635,24 +727,32 @@ class MainWindow(QWidget):
         self.inspect_btn.setEnabled(False)
         QTimer.singleShot(0, self._do_classify)   # let the UI repaint first
 
-    def _measure_diameter(self, result, cfg):
-        """Measure the part; break an appearance TIE by size (refine-only).
+    def _measure_diameter(self, result):
+        """Measure the part; if it breaks an appearance tie, refine the winner.
 
-        Everything is driven by measure_config.json (`cfg`, already loaded by
-        the caller) — there are no UI checkboxes any more. Diameter is used only
-        when 2+ models score at least `tie_confidence`; otherwise the
-        classifier's winner stands. It never rejects a part.
+        Implements Flow C of docs/retraining_strategy.md §5. EVERY failure path
+        returns the classifier's own winner unchanged, so measurement can only
+        refine recognition — it can never make it worse.
 
         Returns: (final_model_name, Measurement | None).
         """
-        # Master switch (measure_config.json → measure_diameter).
-        if not cfg["measure_diameter"]:
+        # Master switch: unchecked ⇒ pure recognition. Nothing below runs, so
+        # there is no masking cost and the verdict is the classifier's alone.
+        if not self.measure_check.isChecked():
             return result.model, None
 
+        # No early return when the background is missing: measure.measure()
+        # falls back to plain thresholding, so the mask window still works
+        # before a reference has been captured (that fallback is exactly what
+        # the operator needs to SEE while setting the rig up).
         if self._background is None:
             self._log("Diameter: no background reference — using plain "
                       "threshold fallback (Options → Background reference)")
 
+        # Re-read measure_config.json each inspection so edits (fit method,
+        # threshold method) take effect without a restart. The UI slider value
+        # is the fallback when the config omits the threshold keys.
+        cfg = measure.load_measure_config(self.state.app_settings.mask_threshold)
         m = measure.measure(
             self._current_image, self._background,
             self.state.app_settings.pixel_to_mm, cfg["threshold"], cfg["fit_method"],
@@ -666,13 +766,15 @@ class MainWindow(QWidget):
             f" | fit: {m.fit_method}"
         )
 
-        # Binary-mask debug window (measure_config.json → show_binary_mask).
-        if cfg["show_binary_mask"]:
+        # Show the mask whenever the box is ticked, even on failure — a bad
+        # mask is the thing you most need to look at.
+        if self.mask_check.isChecked():
             if self._mask_window is None:
                 self._mask_window = MaskViewDialog(self)
             self._mask_window.update_mask(m)
             self._mask_window.show()
             self._mask_window.raise_()
+        self._show_threshold_used(m)
 
         if not m.ok:
             self._log(f"Diameter: measurement failed — {m.reason}")
@@ -688,27 +790,24 @@ class MainWindow(QWidget):
 
         picked, reason = pick_by_diameter(
             result, self.state.models, m.diameter_px,
-            cfg["diameter_tolerance_pct"], cfg["tie_confidence"],
+            self.state.app_settings.recognition_min_confidence,
+            self.state.app_settings.diameter_tolerance_pct,
         )
         if picked is None:
             self._log(f"Diameter tie-break: not applied — {reason}")
             return result.model, m
         if picked != result.model:
             self._log(f"Diameter tie-break: classifier said {result.model}, "
-                      f"size chose {reason}")
+                      f"diameter chose {reason}")
         else:
             self._log(f"Diameter tie-break: agrees with classifier — {reason}")
         return picked, m
 
     def _do_classify(self) -> None:
-        # Read measure_config.json once per inspection so edits take effect with
-        # no restart. All measurement controls come from here now.
-        cfg = measure.load_measure_config(self.state.app_settings.mask_threshold)
-
         # 3. Classify (synchronous; winner = lowest anomaly score). The overlay
-        # is rendered in memory only when the config asks for it.
+        # is rendered in memory only when the checkbox asks for it.
         result = self.engine.classify(
-            self._current_image, want_heatmap=cfg["show_heatmap_overlay"]
+            self._current_image, want_heatmap=self.overlay_check.isChecked()
         )
         if not result.ok:
             self._set_status(f"Error: {result.error}", Level.ERROR)
@@ -746,8 +845,7 @@ class MainWindow(QWidget):
 
         # 4b. Recognized → measure the part, which may refine the winner when
         # two models share a pattern but differ in size, then fill the panel.
-        # (Measurement is refine-only: it never returns "no model".)
-        final_name, m = self._measure_diameter(result, cfg)
+        final_name, m = self._measure_diameter(result)
         if final_name != result.model:
             result.model = final_name                # diameter broke the tie
             result.confidence = result.confidences.get(final_name, result.confidence)

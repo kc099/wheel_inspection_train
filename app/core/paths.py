@@ -21,3 +21,13 @@ def app_root() -> Path:
 
 
 ROOT = app_root()
+
+# Where Capture and PLC triggers save frames — these ARE the training set.
+CAPTURES_DIR = Path.home() / "Desktop" / "WheelCaptures"
+CAPTURES_DIR1 = Path.home() / "Desktop" / "BackgroundCaptures"
+# The empty-conveyor reference lives in a SUB-folder of the captures, on
+# purpose. Operators bulk-delete the loose images in WheelCaptures to recapture
+# a training set; a sub-folder survives that. It also keeps the reference out of
+# training, since list_images() only reads files directly in a folder.
+BACKGROUND_DIR = CAPTURES_DIR1
+BACKGROUND_PATH = BACKGROUND_DIR / "background.png"

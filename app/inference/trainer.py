@@ -114,10 +114,16 @@ class TrainThread(QThread):
     done = Signal(str)
     failed = Signal(str)
 
-    def __init__(self, image_dir: str, model_name: str) -> None:
+    def __init__(self, image_dir: str, model_name: str,
+                 pixel_to_mm: float = 1.0, mask_threshold: int = 0) -> None:
         super().__init__()
         self._image_dir = Path(image_dir)
         self._model_name = model_name
+        self._pixel_to_mm = pixel_to_mm
+        self._mask_threshold = mask_threshold
+        # Median pixel diameter of the uploads, read by the caller after done()
+        # and stored in meta.json for the diameter tie-break (§5.2).
+        self.pixel_diameter: float = 0.0
 
     def run(self) -> None:
         try:
@@ -182,6 +188,25 @@ class TrainThread(QThread):
                     default_root_dir=str(Path(workdir) / "scratch"),
                 )
                 engine.fit(model=model, datamodule=dm)
+
+            # Measure the uploads so this model can take part in the diameter
+            # tie-break. Never fatal: a failure just leaves pixel_diameter at 0,
+            # which makes the model skip that check.
+            try:
+                self.progress.emit("Measuring component diameter…")
+                from ..core.paths import BACKGROUND_PATH
+                from . import measure as _measure
+                bg = _measure.load_background(BACKGROUND_PATH)
+                # Same fit + threshold as inference, else the stored
+                # pixel_diameter would be measured differently from the live
+                # frame it's later compared against.
+                cfg = _measure.load_measure_config(self._mask_threshold)
+                self.pixel_diameter = _measure.measure_folder(
+                    list_images(self._image_dir)[:MAX_UPLOAD_IMAGES],
+                    bg, self._pixel_to_mm, cfg["threshold"], cfg["fit_method"],
+                )
+            except Exception:
+                traceback.print_exc()
 
             self.progress.emit("Saving the trained model…")
             sd = model.state_dict()

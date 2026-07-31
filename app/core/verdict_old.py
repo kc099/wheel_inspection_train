@@ -41,52 +41,39 @@ def match_percentages(result: ClassificationResult) -> dict[str, float]:
 
 
 def pick_by_diameter(result, models, measured_px: float,
-                     tolerance_pct: float, tie_confidence: float):
-    """Break an appearance TIE using the measured diameter — refine only.
+                     min_confidence: float, tolerance_pct: float):
+    """Break an appearance tie using the measured diameter.
 
-    Recognition resizes every frame to 256×256, which erases the size
-    difference, so two same-pattern wheels of different sizes both score high.
-    That "both high" is the signal to fall back on physical size.
+    Patchcore compares appearance, so two wheel types with the same pattern but
+    different diameters score alike. Among the models that ALREADY pass the
+    confidence gate and carry a measured `pixel_diameter`, pick the one whose
+    stored value is closest to `measured_px`.
 
-    This runs the diameter step ONLY when the classifier is genuinely torn:
-    two or more models score at least `tie_confidence` AND carry a stored
-    `pixel_diameter`. Among those contenders it picks the one whose stored size
-    is nearest the measurement, provided it is within tolerance.
+    models       : iterable of ModelData (need .name and .pixel_diameter)
+    measured_px  : this frame's measured diameter, in pixels
+    tolerance_pct: how far off the stored value may be and still match
 
-    It never rejects a part and never overrides a lone confident match — if
-    there is only one strong candidate, or nothing is close enough, it returns
-    None and the caller keeps the classifier's own winner. So it can only refine
-    recognition, never make it worse.
-
-    models        : iterable of ModelData (need .name and .pixel_diameter)
-    measured_px   : this frame's measured diameter, in pixels
-    tolerance_pct : how far off the stored value may be and still match
-    tie_confidence: a model must reach this confidence to count as a contender
-
-    Returns: (chosen_name, reason). `chosen_name` is None when diameter does not
-    apply, so the caller keeps the appearance-only result.
+    Returns: (chosen_name, reason). `chosen_name` is None whenever the tie-break
+    does not apply — the caller then keeps the classifier's own winner, so this
+    can never make recognition worse than classification alone.
     """
     if measured_px <= 0:
         return None, "no measurement"
 
     by_name = {m.name: m for m in models}
-    # Contenders = models the classifier finds plausible AND that we can size-check.
-    contenders = [
+    candidates = [
         name for name, conf in result.confidences.items()
-        if conf >= tie_confidence
+        if conf >= min_confidence
         and name in by_name
         and by_name[name].pixel_diameter > 0
     ]
-    if len(contenders) < 2:
-        return None, (f"only {len(contenders)} model(s) >= {tie_confidence:.2f} "
-                      "confidence - appearance decides")
+    if len(candidates) < 2:
+        return None, "nothing to disambiguate"
 
-    best = min(contenders,
+    best = min(candidates,
                key=lambda n: abs(by_name[n].pixel_diameter - measured_px))
     stored = by_name[best].pixel_diameter
     off_pct = abs(stored - measured_px) / stored * 100.0
     if off_pct > tolerance_pct:
-        return None, (f"nearest contender {best} off {off_pct:.1f}% "
-                      f"(> {tolerance_pct:.1f}%) - appearance kept")
-    return best, (f"{best} (stored {stored:.1f}px vs measured {measured_px:.1f}px; "
-                  f"off {off_pct:.1f}%)")
+        return None, f"closest model {best} off by {off_pct:.1f}% (> {tolerance_pct}%)"
+    return best, f"{best} (stored {stored:.1f}px vs measured {measured_px:.1f}px)"

@@ -1,0 +1,29 @@
+{
+  "measure_diameter": true,
+  "tie_confidence": 0.5,
+  "diameter_tolerance_pct": 3.0,
+  "fit_method": "hull",
+  "threshold_method": "fixed",
+  "threshold_value": 75,
+  "show_binary_mask": false,
+  "show_heatmap_overlay": false,
+  "_help": {
+    "measure_diameter": "Master switch. true = measure diameter and use it to break appearance ties. false = pure recognition (no measurement at all).",
+    "tie_confidence": "Diameter is used ONLY when 2 or more models score at least this confidence (0..1). Same-pattern wheels both score high, so this catches them while leaving confident single matches alone. Raise it to be stricter.",
+    "diameter_tolerance_pct": "A model's stored diameter must be within this percent of the live measurement to be accepted.",
+    "fit_method": "How the enclosing circle is fitted to the binary mask.",
+    "fit_method_options": {
+      "min-enclosing": "Min enclosing circle over ALL mask pixels.",
+      "hull": "Convex hull of the main fragments first (drops small specks)."
+    },
+    "threshold_method": "How the binary mask cut is chosen.",
+    "threshold_method_options": {
+      "otsu": "Automatic per-frame (OpenCV Otsu). threshold_value is ignored.",
+      "fixed": "Use threshold_value (1..255) for every frame."
+    },
+    "threshold_value": "The fixed cut used when threshold_method is 'fixed'.",
+    "show_binary_mask": "true = pop the binary-mask debug window after each inspection.",
+    "show_heatmap_overlay": "true = render the anomaly heatmap over the captured frame (in memory only).",
+    "note": "Edit and re-run an inspection; no restart needed."
+  }
+}

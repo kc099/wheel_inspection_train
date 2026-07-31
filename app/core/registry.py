@@ -82,6 +82,7 @@ def _migrate_flat_models() -> None:
             "name": name,
             "diameter": float(dims.get("diameter", 0.0)),
             "height": float(dims.get("height", 0.0)),
+            "pixel_diameter": 0.0,          # unmeasured: skips the diameter check
             "created": datetime.now().isoformat(timespec="seconds"),
         })
 

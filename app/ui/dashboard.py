@@ -124,8 +124,12 @@ class DashboardBand(QWidget):
         lay.setSpacing(12)
         self.counts = WheelCountBlock()
         self.recent = RecentInspectionsBlock()
-        lay.addWidget(self.counts, 1)
-        lay.addWidget(self.recent, 1)
+        # Wheel-count is only two narrow columns — keep it compact (~28% and
+        # capped) and let Recent Inspections take the rest, so it doesn't stretch
+        # across a wide screen.
+        self.counts.setMaximumWidth(430)
+        lay.addWidget(self.counts, 2)
+        lay.addWidget(self.recent, 5)
         self.refresh()
 
     def refresh(self) -> None:

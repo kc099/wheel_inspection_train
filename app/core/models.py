@@ -26,6 +26,11 @@ class ModelData:
     name: str
     diameter: float = 0.0
     height: float = 0.0
+    # Median diameter in PIXELS measured on this model's training images.
+    # 0.0 = not measured (older models) → that model skips the diameter
+    # tie-break entirely. Matching is pixel-to-pixel against this value so it
+    # stays valid even if the mm scale factor drifts.
+    pixel_diameter: float = 0.0
 
     def to_dict(self) -> dict:
         """Serialize for the registry's meta.json. Returns a JSON-safe dict."""
@@ -33,6 +38,7 @@ class ModelData:
             "name": self.name,
             "diameter": self.diameter,
             "height": self.height,
+            "pixel_diameter": self.pixel_diameter,
         }
 
     @staticmethod
@@ -43,6 +49,7 @@ class ModelData:
             name=str(d.get("name", "")),
             diameter=float(d.get("diameter", 0.0)),
             height=float(d.get("height", 0.0)),
+            pixel_diameter=float(d.get("pixel_diameter", 0.0)),
         )
 
 
@@ -151,6 +158,23 @@ class AppSettings:
     session_timeout_minutes: int = 5
     # Maximum number of user profiles (1 developer + operators).
     max_profiles: int = 4
+    # --- diameter measurement (docs/retraining_strategy.md §5) ---------------
+    # Master switch. False = pure recognition: no masking, no measurement, no
+    # diameter tie-break, whatever the other settings say. Off by default —
+    # measurement is opt-in, since classification alone already separates the
+    # current models and this keeps the production path at its fastest.
+    measure_diameter: bool = False
+    # mm per pixel, from rig calibration. Re-derive after ANY camera change:
+    # photograph a wheel of known diameter, then known_mm / measured_px.
+    pixel_to_mm: float = 0.885
+    # How far a measured diameter may sit from a model's stored pixel_diameter
+    # and still count as that model. 3.0 = 3 sigma of the measured repeatability
+    # on this rig (std 4.83 px / 4.3 mm on a 558 px wheel, 53-frame batch), so
+    # 99.7% of genuine parts pass. Consequence: two models are only separable
+    # if their diameters differ by more than 2x this (~6%, ~30 mm at 490 mm).
+    diameter_tolerance_pct: float = 3.0
+    # Binary-mask threshold: 0 = automatic (Otsu), 1..255 = fixed cut.
+    mask_threshold: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -159,6 +183,10 @@ class AppSettings:
             "recognition_min_confidence": self.recognition_min_confidence,
             "session_timeout_minutes": self.session_timeout_minutes,
             "max_profiles": self.max_profiles,
+            "measure_diameter": self.measure_diameter,
+            "pixel_to_mm": self.pixel_to_mm,
+            "diameter_tolerance_pct": self.diameter_tolerance_pct,
+            "mask_threshold": self.mask_threshold,
         }
 
     @staticmethod
@@ -174,6 +202,12 @@ class AppSettings:
                 d.get("session_timeout_minutes", base.session_timeout_minutes)
             ),
             max_profiles=int(d.get("max_profiles", base.max_profiles)),
+            measure_diameter=bool(d.get("measure_diameter", base.measure_diameter)),
+            pixel_to_mm=float(d.get("pixel_to_mm", base.pixel_to_mm)),
+            diameter_tolerance_pct=float(
+                d.get("diameter_tolerance_pct", base.diameter_tolerance_pct)
+            ),
+            mask_threshold=int(d.get("mask_threshold", base.mask_threshold)),
         )
 
 
