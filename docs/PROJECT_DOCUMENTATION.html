@@ -363,6 +363,28 @@ figcaption { color: #5b6b7a; font-size: .9rem; margin-top: .5rem;
                                                          model id + ENTERED
                                                          height + ENTERED diameter)</code></pre>
 <blockquote><strong>Which diameter goes to the PLC?</strong> The <strong>entered</strong> diameter (typed at training, stored in <code>meta.json</code>), not the measured one. The measured value is used only to *choose* the model in step ⑥; the clean nominal spec is what is transmitted.</blockquote>
+<h3>6.1 The serial protocol — trigger in, 13-byte reply out</h3>
+<p>The link between the software and the PLC is a <strong>custom binary protocol on a raw serial line</strong>, not a true Modbus RTU transaction — it borrows Modbus&#x27;s slave-id / function-code byte convention (and the <code>settings.json</code> label &quot;Modbus RTU&quot;) but has <strong>no CRC and no register addressing</strong>. Everything below is implemented in <code>app/comms/signal_handler.py</code>.</p>
+<p><strong>Inbound — PLC → software (trigger only, not parsed into fields).</strong> The PLC just needs to tell the software &quot;a wheel has arrived, run the inspection now.&quot; The software does not decode the bytes it receives — it only counts them:</p>
+<ul>
+<li>Any burst of <strong>6 to 8 bytes</strong> that lands in the input buffer within one 10 ms poll tick is treated as a valid trigger; the buffer is then cleared regardless of what those bytes actually contained.</li>
+<li>An incomplete burst (fewer than 6 bytes) is dropped if no more bytes arrive within <strong>2 s</strong> (<code>_FRAME_TIMEOUT</code>).</li>
+<li>A <strong>4 s cooldown</strong> (<code>_COOLDOWN</code>) after each accepted trigger swallows any further bytes, so one wheel can&#x27;t fire two inspections.</li>
+<li>A trigger seen within the last <strong>30 s</strong> counts as &quot;wheel present&quot; — <code>is_wheel_present()</code> reads this for the UI/status logic.</li>
+</ul>
+<p><strong>Outbound — software → PLC (the 13-byte reply, one fixed layout, sent after every inspection).</strong> All multi-byte numbers are <strong>big-endian</strong> <code>float32</code>; there is no CRC appended (the firmware doesn&#x27;t check for one — a <code>modbus_crc16()</code> helper exists in the code for a real Modbus CRC-16 but is currently unused).</p>
+<table><thead><tr><th>Byte(s)</th><th>Field</th><th>Value</th></tr></thead><tbody>
+<tr><td>0</td><td>Slave ID</td><td>from Modbus Settings (<code>slave_id</code>, default <code>1</code>)</td></tr>
+<tr><td>1</td><td>Function code</td><td>fixed <code>0x03</code></td></tr>
+<tr><td>2–5</td><td>Height (mm)</td><td>float32 big-endian — the model&#x27;s <strong>entered/nominal</strong> spec height, not the measured one</td></tr>
+<tr><td>6–9</td><td>Diameter (mm)</td><td>float32 big-endian — same: entered spec, not measured (see the note above)</td></tr>
+<tr><td>10</td><td>Model ID</td><td>1 byte, from a fixed name→id map: A1=1, A2=2, B1=3, B2=4, C1=5; any other name falls back to the first number found in it, mod 256, or 0 if none</td></tr>
+<tr><td>11</td><td>Pass/Fail</td><td><code>0x01</code> = PASS, <code>0x00</code> = FAIL</td></tr>
+<tr><td>12</td><td>Detection confirmed</td><td><code>0x01</code> = a model was recognised; <code>0x00</code> = unknown part — an explicit &quot;rejected&quot; reply (model id 0, height/diameter 0.0, FAIL) sent so the PLC never waits indefinitely on an unrecognised part</td></tr>
+</tbody></table>
+<blockquote><strong>Note:</strong> height is sent <strong>before</strong> diameter (bytes 2–5, then 6–9) — this order matches the Arduino/firmware&#x27;s <code>rxdata[13]</code> layout and must not be swapped.</blockquote>
+<p>Serial line settings (both directions): 8 data bits, <strong>EVEN</strong> parity, 1 stop bit, baud rate from Modbus Settings (default 19200), 500 ms read/write timeouts.</p>
+<p><code>ip_address</code>, <code>address1</code>/<code>address2</code>/<code>address3</code>, and <code>delay_ms</code> also live in Modbus Settings / <code>settings.json</code>, but the current serial exchange above does not use them — they&#x27;re reserved for a possible future TCP transport.</p>
 <hr>
 <h2>7. Recognition — how the app knows the model (PatchCore)</h2>
 <h3>7.1 The idea in plain words</h3>

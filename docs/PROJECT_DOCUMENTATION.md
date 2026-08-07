@@ -243,6 +243,56 @@ get real threads; short ones are deferred instead.
 > stored in `meta.json`), not the measured one. The measured value is used only
 > to *choose* the model in step ⑥; the clean nominal spec is what is transmitted.
 
+### 6.1 The serial protocol — trigger in, 13-byte reply out
+
+The link between the software and the PLC is a **custom binary protocol on a
+raw serial line**, not a true Modbus RTU transaction — it borrows Modbus's
+slave-id / function-code byte convention (and the `settings.json` label
+"Modbus RTU") but has **no CRC and no register addressing**. Everything below
+is implemented in `app/comms/signal_handler.py`.
+
+**Inbound — PLC → software (trigger only, not parsed into fields).** The PLC
+just needs to tell the software "a wheel has arrived, run the inspection now."
+The software does not decode the bytes it receives — it only counts them:
+
+- Any burst of **6 to 8 bytes** that lands in the input buffer within one
+  10 ms poll tick is treated as a valid trigger; the buffer is then cleared
+  regardless of what those bytes actually contained.
+- An incomplete burst (fewer than 6 bytes) is dropped if no more bytes arrive
+  within **2 s** (`_FRAME_TIMEOUT`).
+- A **4 s cooldown** (`_COOLDOWN`) after each accepted trigger swallows any
+  further bytes, so one wheel can't fire two inspections.
+- A trigger seen within the last **30 s** counts as "wheel present" —
+  `is_wheel_present()` reads this for the UI/status logic.
+
+**Outbound — software → PLC (the 13-byte reply, one fixed layout, sent after
+every inspection).** All multi-byte numbers are **big-endian** `float32`;
+there is no CRC appended (the firmware doesn't check for one — a
+`modbus_crc16()` helper exists in the code for a real Modbus CRC-16 but is
+currently unused).
+
+| Byte(s) | Field | Value |
+|---|---|---|
+| 0 | Slave ID | from Modbus Settings (`slave_id`, default `1`) |
+| 1 | Function code | fixed `0x03` |
+| 2–5 | Height (mm) | float32 big-endian — the model's **entered/nominal** spec height, not the measured one |
+| 6–9 | Diameter (mm) | float32 big-endian — same: entered spec, not measured (see the note above) |
+| 10 | Model ID | 1 byte, from a fixed name→id map: A1=1, A2=2, B1=3, B2=4, C1=5; any other name falls back to the first number found in it, mod 256, or 0 if none |
+| 11 | Pass/Fail | `0x01` = PASS, `0x00` = FAIL |
+| 12 | Detection confirmed | `0x01` = a model was recognised; `0x00` = unknown part — an explicit "rejected" reply (model id 0, height/diameter 0.0, FAIL) sent so the PLC never waits indefinitely on an unrecognised part |
+
+> **Note:** height is sent **before** diameter (bytes 2–5, then 6–9) — this
+> order matches the Arduino/firmware's `rxdata[13]` layout and must not be
+> swapped.
+
+Serial line settings (both directions): 8 data bits, **EVEN** parity, 1 stop
+bit, baud rate from Modbus Settings (default 19200), 500 ms read/write
+timeouts.
+
+`ip_address`, `address1`/`address2`/`address3`, and `delay_ms` also live in
+Modbus Settings / `settings.json`, but the current serial exchange above does
+not use them — they're reserved for a possible future TCP transport.
+
 ---
 
 ## 7. Recognition — how the app knows the model (PatchCore)
