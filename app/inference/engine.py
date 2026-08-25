@@ -36,16 +36,26 @@ _IMG_SIZE = 256
 class _LoadedModel:
     """A resident checkpoint plus the calibration used at inference time."""
 
-    def __init__(self, module, img_min: float, img_max: float) -> None:
+    def __init__(self, module, img_min: float, img_max: float,
+                 grayscale: bool = False) -> None:
         self.module = module          # anomalib Patchcore (eval mode)
         self.img_min = img_min        # min/max map a raw score → 0..1 confidence
         self.img_max = img_max
+        self.grayscale = grayscale    # bank built on luminance ⇒ preprocess to match
 
 
-def _preprocess(image_path: str) -> torch.Tensor:
+def _preprocess(image_path: str, grayscale: bool = False) -> torch.Tensor:
     """Load an image → normalised (1,3,256,256) tensor. Returns: torch.Tensor.
-    Raises on an unreadable file (caller turns it into a result error)."""
-    img = Image.open(image_path).convert("RGB").resize((_IMG_SIZE, _IMG_SIZE))
+    Raises on an unreadable file (caller turns it into a result error).
+
+    When `grayscale`, collapse to luminance (R=G=B) before resizing — the mirror
+    of trainer._to_gray_rgb. It MUST match training or the memory bank won't
+    recognise these features. Colour models (grayscale=False) are unchanged.
+    """
+    img = Image.open(image_path).convert("RGB")
+    if grayscale:
+        img = img.convert("L").convert("RGB")
+    img = img.resize((_IMG_SIZE, _IMG_SIZE))
     arr = np.asarray(img, dtype=np.float32) / 255.0
     t = torch.from_numpy(arr).permute(2, 0, 1).unsqueeze(0)
     return (t - _MEAN) / _STD
@@ -63,6 +73,10 @@ def _load_module(name: str) -> _LoadedModel:
     if path is None:
         raise FileNotFoundError(f"No weights for model '{name}'")
     sd = torch.load(path, map_location="cpu", weights_only=False)
+    # Our own tag (not part of anomalib's state_dict): whether this bank was
+    # built on greyscale. Pop it BEFORE the strict load below, which rejects any
+    # unexpected key. Absent ⇒ an older colour-trained model.
+    grayscale = bool(sd.pop("_meta_grayscale", False))
     # The backbone layers are baked into the checkpoint via its memory-bank
     # width (resnet50: layer2=512, layer3=1024, layer4=2048 channels), so
     # models trained before and after the layer2+layer4 switch both load.
@@ -86,6 +100,7 @@ def _load_module(name: str) -> _LoadedModel:
         module,
         _f("post_processor.image_min"),
         _f("post_processor.image_max"),
+        grayscale,
     )
 
 
@@ -210,9 +225,12 @@ class InferenceEngine(QObject):
         if not names:
             return ClassificationResult(ok=False, error="No models registered")
         try:
-            x = _preprocess(image_path)
+            x_color = _preprocess(image_path)
         except Exception as e:
             return ClassificationResult(ok=False, error=f"Bad image: {e}")
+        # Greyscale variant is built lazily and only if some model needs it, so a
+        # mixed colour/greyscale model set costs at most two preprocess passes.
+        x_gray: torch.Tensor | None = None
 
         scores: dict[str, float] = {}
         confidences: dict[str, float] = {}
@@ -221,6 +239,12 @@ class InferenceEngine(QObject):
             with torch.no_grad():
                 for name in names:
                     lm = self._ensure_loaded(name)
+                    if lm.grayscale:
+                        if x_gray is None:
+                            x_gray = _preprocess(image_path, grayscale=True)
+                        x = x_gray
+                    else:
+                        x = x_color
                     out = lm.module.model(x)
                     score = float(out.pred_score.reshape(-1)[0])
                     scores[name] = score

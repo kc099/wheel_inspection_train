@@ -169,6 +169,49 @@ Rules of thumb:
 - **`state.py`** is the shared truth: current settings and the model list. It
   emits Qt signals when they change so the UI refreshes.
 
+### 4.1 Code exploration roadmap — how to read this codebase
+
+A new developer should open the files **in this order**, not alphabetically. Each
+step builds on the last; by the end you can trace one inspection end to end. Read
+the file's top-of-file docstring first — every module has one that states its job.
+
+**Start here (the spine — 30 minutes):**
+
+| # | File | Read it to learn | Why here |
+|---|---|---|---|
+| 1 | `main.py` | how the app boots and opens the window | The single entry point; also sets up file logging in the frozen `.exe`. |
+| 2 | `app/core/models.py` | the vocabulary — `ModelData`, `AppSettings`, `ClassificationResult` | Every other file passes these objects around; learn the nouns first. |
+| 3 | `app/core/state.py` | the shared truth (settings + model list) and its Qt signals | Everything reads/writes state through here; it's the hub the UI listens to. |
+| 4 | `app/ui/main_window.py` | how the pieces are wired together (`_do_classify`) | The orchestrator. Skim it — don't read every line — to see who calls whom. |
+
+**Then the recognition path (the core value — 45 minutes):**
+
+| # | File | Read it to learn | Why here |
+|---|---|---|---|
+| 5 | `app/core/registry.py` | how models are stored on disk (`models/<name>/`) | Where `classify()` gets its models; the folder layout is the whole storage design. |
+| 6 | `app/inference/engine.py` | `classify()` — score every model, pick the winner, novelty gate, **greyscale-aware preprocess** | The heart of the product. Also where the LRU model cache lives. |
+| 7 | `app/core/verdict.py` | the Match-% math and the diameter tie-break | The **one** place recognition math lives — single and batch both call it. |
+| 8 | `app/inference/trainer.py` | how a new model is trained (rotations, **greyscale**, calibration) | The mirror of the engine's preprocessing — read the two together. |
+
+**Then the surrounding systems (as needed):**
+
+| # | File | Read it to learn | Why here |
+|---|---|---|---|
+| 9 | `app/inference/measure.py` | diameter: mask → circle fit | Only used when "Measure diameter" is on; independent of recognition. |
+| 10 | `app/comms/signal_handler.py` | the serial trigger in + 13-byte PLC frame out | The hardware contract (see §6.1). Self-contained. |
+| 11 | `app/comms/camera.py` | reading the HTTP video stream on a thread | Independent; safe to read last. |
+| 12 | `app/ui/dialogs/` | the secondary windows (Train, Batch, Modbus, Users…) | One file per dialog; open only the one you're changing. |
+
+**Two rules that make the tour make sense:**
+- Follow the **dependency arrows in §4, never the folder alphabet** — `core/` has
+  no UI imports, so it reads cleanly on its own; `ui/` sits on top of everything.
+- When training or inference confuses you, **read `trainer.py` and `engine.py`
+  side by side** — their preprocessing (rotations, greyscale, normalisation) must
+  match, so each explains the other.
+
+> For the deeper "why it is this way" decisions, magic numbers, and traps behind
+> these files, read `docs/CONTEXT_HANDOFF.md` after this tour.
+
 ---
 
 ## 5. System architecture — PySide6 (Qt) threading
@@ -355,15 +398,27 @@ cause of early misrecognition.
 ```
    Upload 10–25 good images of ONE model
         │  augment: + 90°/180°/270° rotations, up to 60 total
+        │  convert to greyscale (luminance R=G=B) — training only
         ▼
    PatchCore.fit  (ResNet-50 layer2+layer4, coreset 0.1)
         · validation = a copy of the uploads (nothing held out)
         · calibration widened: image_max = 2 × image_min
         ▼
-   Save models/<name>/weights.pt + meta.json (diameter, height, pixel_diameter)
+   Save models/<name>/weights.pt (tagged _meta_grayscale) + meta.json
+        (diameter, height, pixel_diameter)
 ```
 
 Each choice fixed a real failure — see §14 (progress table) for the story.
+
+> **Colour vs greyscale (added 8 Aug).** New models train on **greyscale**: the
+> uploads and the calibration set are collapsed to luminance (R=G=B) before the
+> memory bank is built, so recognition keys on shape and texture and is not
+> thrown by lighting/colour drift. The operator still sees the **original colour
+> frame** in the capture view — only what the model learns from is greyscale.
+> Each checkpoint records how it was trained (`_meta_grayscale`); at inference the
+> app greyscales the frame only for models that carry the tag, so **older
+> colour-trained models keep working unchanged**. To move an existing model to
+> greyscale, simply **retrain it**. `code:` `trainer.py`, `engine.py`.
 
 ---
 
@@ -519,6 +574,27 @@ pip install pyinstaller
 pyinstaller WheelInspection.spec --noconfirm
 ```
 
+> ### ⚠️ Special point — the exact build command that works on the client machine
+>
+> On the client build machine, the command that reliably produces the
+> double-click app is:
+>
+> ```
+> python -m PyInstaller --clean --noconfirm WheelInspection.spec
+> ```
+>
+> Use **this exact line on the client machine** — it is the one confirmed to
+> work there:
+> - **`python -m PyInstaller`** (not a bare `pyinstaller`) runs the PyInstaller
+>   inside the *active* environment, so it can't accidentally pick up a different
+>   PyInstaller on PATH — the usual reason a bare `pyinstaller` fails on that box.
+> - **`--clean`** wipes PyInstaller's cache and the previous `build/` first, so a
+>   stale cache from an earlier attempt can't poison the new build.
+> - **`--noconfirm`** overwrites the old `dist\WheelInspection\` without prompting.
+>
+> Run it from the project root (where `WheelInspection.spec` lives), with the
+> conda env activated.
+
 - **Use the `.spec` file**, not a bare `pyinstaller main.py` — the spec carries
   the `--collect-all` for torch / anomalib / timm / kornia / lightning that a
   naive build misses (the exe would otherwise crash with `ModuleNotFoundError`).
@@ -665,6 +741,9 @@ sessions (2026).
 | 20–21 Jul | 14. Findings | Model 2 spec (496) is ~478–482 real; ±5 mm models can't be split by diameter | Set client expectations | Threshold sweep + bbox + overlay agree |
 | 28 Jul | 15. Config & docs | measure_config.json, mask debug window, this documentation | Operator-tunable + maintainable | Config resolves; both fit methods agree |
 | 28 Jul | 16. Tie-break rework + operator build | Diameter tie-break made refine-only — used only when 2+ models score ≥ tie_confidence, never rejects/overrides a lone match; all measurement controls moved to measure_config.json (UI checkboxes removed); console-less exe that logs to WheelInspection.log; data (history.db, settings, models) kept beside the exe | Fix "same pattern, different size → both read as smaller"; ship an operator-facing build | Tie-break verified on 4 scenarios; frozen data paths simulated |
+| 8 Aug | 17. Client-ready report + docs | Report expanded: serial/Modbus 13-byte frame section, history-DB schema, screenshots + SVG flowchart, context handoff; standalone `model_convert/bw_convert.py` B/W image converter | Hand a maintainable single-source report to the client; give a manual B/W conversion tool | Report regenerated; converter verified (grayscale `L`, binary {0,255}) |
+| 8 Aug | 18. Training progress wheel | Replaced the indeterminate bar + "…N images…" line with a spoked-wheel widget that rolls 0→100 %, eased per stage | Clear operator feedback during a training run | Rendered at 0/30/65/100 % |
+| 8 Aug | 19. Greyscale training pipeline | Training now converts uploads **and** the validation/calibration set to luminance-only (R=G=B) before building the memory bank; each new checkpoint is tagged `_meta_grayscale` so inference greyscales to match. The capture view still shows the original **colour** frame — only what the model learns from is greyscale. Old colour models carry no tag and keep running in colour | Recognise on shape/texture and stay robust to lighting/colour drift between shifts, without breaking existing models | Both pipeline files syntax-checked; per-model colour/greyscale tensor selection reviewed. **Retrain each model to activate greyscale** |
 
 ---
 

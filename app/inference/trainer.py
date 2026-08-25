@@ -57,6 +57,27 @@ LAYERS = ["layer2", "layer4"]
 # real photo of a good wheel instead of a resampled one with black corners.
 _ROTATIONS = (90, 180, 270)
 
+# Train on luminance only (colour discarded), so recognition keys on shape and
+# texture and is not thrown by lighting/colour drift between shifts. The operator
+# still sees the ORIGINAL colour frame in the capture view — only what the model
+# learns from is greyscale. New models are tagged `_meta_grayscale` in the
+# checkpoint so inference greyscales to match (engine._preprocess); models trained
+# before this flag existed have no tag and keep running in colour.
+TRAIN_GRAYSCALE = True
+
+
+def _to_gray_rgb(img: Image.Image) -> Image.Image:
+    """Luminance-only copy, re-expanded to 3 identical channels (R=G=B).
+
+    ResNet-50 needs 3 input channels, so we can't hand it a 1-channel image;
+    R=G=B greyscale keeps the backbone happy while carrying no colour.
+
+    Training and inference MUST apply this identically or the memory bank built
+    here won't match the features inference extracts. The mirror lives in
+    app/inference/engine.py `_preprocess(grayscale=True)` — change both together.
+    """
+    return img.convert("L").convert("RGB")
+
 
 def list_images(folder: str | Path) -> list[Path]:
     """The usable images directly in `folder`, name-sorted. Returns: list[Path]."""
@@ -73,19 +94,29 @@ def count_images(folder: str | Path) -> int:
 
 def build_training_set(src: str | Path, dst: str | Path,
                        max_uploads: int = MAX_UPLOAD_IMAGES,
-                       max_total: int = MAX_TRAIN_IMAGES) -> int:
+                       max_total: int = MAX_TRAIN_IMAGES,
+                       grayscale: bool = TRAIN_GRAYSCALE) -> int:
     """Fill `dst` with the training samples for one model.
 
     Takes the first `max_uploads` images from `src`, then adds rotated copies
     (90/180/270°) until `max_total` is reached. Rotations are written as PNG so
-    an RGBA/palette source can't fail the save. Returns: total images in `dst`.
+    an RGBA/palette source can't fail the save. When `grayscale`, every sample
+    (originals included) is converted to luminance-only R=G=B first, so the
+    memory bank is built on greyscale — inference must match. Returns: total
+    images in `dst`.
     """
     dst = Path(dst)
     dst.mkdir(parents=True, exist_ok=True)
 
     originals = list_images(src)[:max_uploads]
     for f in originals:
-        shutil.copy2(f, dst / f.name)
+        if grayscale:
+            # Re-encode as PNG: the source may be a JP/BMP/palette image and
+            # we're rewriting pixels anyway.
+            with Image.open(f) as img:
+                _to_gray_rgb(img).save(dst / f"{f.stem}.png")
+        else:
+            shutil.copy2(f, dst / f.name)
 
     n = len(originals)
     # Offsetting the angle by the image's position means a partial pass still
@@ -96,7 +127,10 @@ def build_training_set(src: str | Path, dst: str | Path,
                 return n
             angle = _ROTATIONS[(i + turn) % len(_ROTATIONS)]
             with Image.open(f) as img:
-                img.rotate(angle, expand=True).save(dst / f"{f.stem}_rot{angle}.png")
+                out = img.rotate(angle, expand=True)
+                if grayscale:
+                    out = _to_gray_rgb(out)
+                out.save(dst / f"{f.stem}_rot{angle}.png")
             n += 1
     return n
 
@@ -146,7 +180,14 @@ class TrainThread(QThread):
                 val = Path(workdir) / "val"
                 val.mkdir()
                 for f in list_images(self._image_dir)[:MAX_UPLOAD_IMAGES]:
-                    shutil.copy2(f, val / f.name)
+                    # Must match the training set's colour space: image_min/max
+                    # (the confidence calibration) is measured on these, and
+                    # inference greyscales too.
+                    if TRAIN_GRAYSCALE:
+                        with Image.open(f) as img:
+                            _to_gray_rgb(img).save(val / f"{f.stem}.png")
+                    else:
+                        shutil.copy2(f, val / f.name)
 
                 # anomalib's Folder wants root + normal/test dirs under it.
                 dm = Folder(
@@ -219,6 +260,10 @@ class TrainThread(QThread):
             mn = float(sd["post_processor.image_min"])
             mx = float(sd["post_processor.image_max"])
             sd["post_processor.image_max"] = torch.tensor(max(2.0 * mn, mn + 1.0, mx))
+            # Record the colour space this bank was built in so inference
+            # preprocesses to match. Absent ⇒ an older colour model (default off).
+            # Popped before the strict state_dict load in engine._load_module.
+            sd["_meta_grayscale"] = bool(TRAIN_GRAYSCALE)
             tmp = Path(tempfile.gettempdir()) / f"{self._model_name}_trained.pt"
             torch.save(sd, tmp)
 

@@ -88,7 +88,59 @@ today; see the 2026-07-28 entry for why.
 
 ---
 
-## 2026-07-29 — Report: DB schema + build/install steps; dashboard width
+## 2026-08-08 — Greyscale training pipeline (recognition now learns on B/W)
+
+Training now builds the memory bank from **greyscale** images while the operator
+still sees the original colour frame in the capture view. Because PatchCore
+matches training features against inference features, this had to change **both**
+sides of the pipeline together, tagged so old colour models don't break.
+
+- `app/inference/trainer.py`
+  - New `TRAIN_GRAYSCALE = True` flag and `_to_gray_rgb(img)` helper
+    (`convert("L").convert("RGB")` — luminance re-expanded to 3 identical
+    channels so ResNet-50 still gets 3 inputs).
+  - `build_training_set()` gained a `grayscale` param: originals and rotated
+    copies are converted before they're written to the training folder.
+  - The **validation/calibration set** copy in `run()` is greyscaled too — it
+    drives `image_min`/`image_max`, so it must share the training colour space.
+  - Each saved checkpoint is tagged `sd["_meta_grayscale"] = True`.
+- `app/inference/engine.py`
+  - `_load_module()` pops `_meta_grayscale` **before** the strict `load_state_dict`
+    (an unexpected key would fail the strict load); stores it on `_LoadedModel`.
+  - `_preprocess(image_path, grayscale=False)` mirrors `_to_gray_rgb`.
+  - `classify()` builds the greyscale tensor lazily and picks per model, so a
+    mixed colour/greyscale model set costs at most two preprocess passes.
+- Backward-compatible: models trained before this have no tag → default colour →
+  unchanged. **Retrain a model to move it to greyscale.**
+- Verified: both files syntax-checked; per-model tensor selection reviewed. Not
+  yet retrained end-to-end (needs the `dl`/`depth` env with anomalib + samples).
+- Caveat recorded: greyscale discards colour — good when models differ by
+  shape/texture and lighting varies, worse if two models differ mainly by colour.
+  Watch batch-test accuracy after retraining.
+
+## 2026-08-08 — Train UI wheel, code roadmap, B/W converter
+
+- train.py: replaced the indeterminate progress bar and the "…N images…" status
+  line with a custom `TrainingProgress` widget — a spoked wheel that rolls
+  0→100% (eased per stage) with clean stage labels. Verified by rendering at
+  0/30/65/100%.
+- PROJECT_DOCUMENTATION §16: added a "Code exploration roadmap" (ordered,
+  what/why per file) for a new developer; glossary → §17.
+- New `model_convert/bw_convert.py`: converts a folder of images to
+  black-and-white (grayscale default, or `--binary` with Otsu/fixed threshold)
+  into an output folder. Verified: grayscale `L`, binary values {0,255}.
+
+## 2026-08-08 — Report: Serial/Modbus frame section
+
+- PROJECT_DOCUMENTATION: new §14 "Serial / Modbus communication with the PLC" —
+  serial port settings (8-EVEN-1, baud/port from settings.json), trigger
+  detection (6–8 byte burst, 4 s cooldown), the 13-byte reply frame byte-by-byte
+  (slave_id, 0x03, height f32 BE, diameter f32 BE, model_id, pass, confirmed;
+  no CRC; safe zero frame for not-a-known-model), and the name→model_id mapping.
+  Renumbered progress→§15, glossary→§16; cross-ref updated. Read from
+  signal_handler.py so it's exact.
+
+## 2026-08-08 — Report: DB schema + build/install steps; dashboard width
 
 - PROJECT_DOCUMENTATION: new §13 "Data storage — the history database"
   (inspections + audit_log schema tables, how the DB auto-generates, how it's
@@ -98,7 +150,7 @@ today; see the 2026-07-28 entry for why.
 - dashboard.py: capped the "Wheel Count by Model" block width (max 430px,
   stretch 2:5) so it no longer stretches across a wide screen.
 
-## 2026-07-29 — Report images/flowchart + context handoff + report prompt
+## 2026-08-08 — Report images/flowchart + context handoff + report prompt
 
 - PROJECT_DOCUMENTATION: reworded description (diameter used to separate
   same-pattern models, not "optional"); added Screenshots (home + 2 working
